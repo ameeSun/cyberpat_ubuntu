@@ -226,7 +226,7 @@ echo "$LogTime uss: [$UserName]# Creating /etc/lightdm/lightdm.conf for 12.04 co
 			sudo cat /etc/lightdm/lightdm.conf
 			pause
 		else
-			touch /etc/lightdm/lightdm.conf
+			sudo touch /etc/lightdm/lightdm.conf
 			sudo sed -i '$a [SeatDefault]' /etc/lightdm/lightdm.conf
 			sudo sed -i '$a allow-guest=false' /etc/lightdm/lightdm.conf
 			sudo sed -i '$a greeter-hide-users=true' /etc/lightdm/lightdm.conf
@@ -317,12 +317,20 @@ passPol() {
 echo "$LogTime uss: [$UserName]# Setting password policy..." >> output.log
 echo "$LogTime uss: [$UserName]# Installing Craklib..." >> output.log
 	sudo apt-get install libpam-cracklib || yum install libpam-cracklib
+	sudo apt install libpam-tmpdin -y
+	sudo apt install libpam-usb -y
 	wait
 echo "$LogTime uss: [$UserName]# Cracklib installed." >> output.log
+	sudo sed -i '1 s/^/password requisite pam_cracklib.so reject_username enforce_for_root maxclassrepeat=5 maxsequence=5 dcredit=-1 ocredit=-1 lcredit=-1 ucredit=-1 minlen=16 difok=5 retry=3\n/' /etc/pam.d/common-password
 	sudo sed -i.bak -e 's/PASS_MAX_DAYS\t[[:digit:]]\+/PASS_MAX_DAYS\t90/' /etc/login.defs
 	sudo sed -i -e 's/PASS_MIN_DAYS\t[[:digit:]]\+/PASS_MIN_DAYS\t10/' /etc/login.defs
 	sudo sed -i -e 's/PASS_WARN_AGE\t[[:digit:]]\+/PASS_WARN_AGE\t7/' /etc/login.defs
-	sudo sed -i -e 's/difok=3\+/difok=3 ucredit=-1 lcredit=-1 dcredit=-1 ocredit=-1/' /etc/pam.d/common-password
+	sudo sed -i 's/\(pam_unix\.so.*\)$/\1 remember=5 minlen=8/' /etc/pam.d/common-password
+	    echo "
+    auth	required	pam_cracklib.so reject_username enforce_for_root maxclassrepeat=5 maxsequence=5 dcredit=-1 ocredit=-1 lcredit=-1 ucredit=-1 minlen=16 difok=5 retry=3
+        auth	required	pam_unix.so sha512 use_authtok remember=5 minlen=8
+    "
+    sudo gedit /etc/pam.d/common-password
 echo "$LogTime uss: [$UserName]# Password Policy." >> output.log
 
 	pause
@@ -481,7 +489,8 @@ echo "$LogTime uss: [$UserName]# Removing hacking tools..." >> output.log
 sudo apt remove aisleriot gnome-mahjongg gnome-mines gnome-sudoku 
 sudo apt purge wireshark*
 sudo apt purge remmina*
-sudo apt purge tcpdump tcpd
+sudo apt purge tcpdump 
+sudo apt purge tcpd
 sudo apt purge netcat*
 sudo apt purge nc
 sudo apt purge smbd
@@ -501,8 +510,12 @@ sudo apt purge squid
 sudo apt purge inetutiles-inetd
 sudo apt purge ophcrack*
 sudo apt purge lighttpd
-sudo apt purge nmap zenmap
+sudo apt purge nmap 
+sudo apt purge zenmap
 sudo apt purge telnet*
+sudo apt purge freeciv
+sudo apt purge kismet
+sudo apt purge minetest
 
 ##Looks for apache web server	
 	sudo dpkg -l | grep apache >> output.log
@@ -512,7 +525,7 @@ sudo apt purge telnet*
         	if [ $a = n ];
         	then
       	        	sudo apt-get autoremove -y --purge apache2 >> output.log
-			else
+		else
             		if [ -e /etc/apache2/apache2.conf ]
 				then
 					sudo chown -R root:root /etc/apache2
@@ -525,13 +538,13 @@ sudo apt purge telnet*
 				else
 					##Installs and configures apache
 					sudo apt-get install apache2 -y
-						sudo chown -R root:root /etc/apache2
-						sudo chown -R root:root /etc/apache
-						echo \<Directory \> >> /etc/apache2/apache2.conf
-						echo -e ' \t AllowOverride None' >> /etc/apache2/apache2.conf
-						echo -e ' \t Order Deny,Allow' >> /etc/apache2/apache2.conf
-						echo -e ' \t Deny from all' >> /etc/apache2/apache2.conf
-						echo UserDir disabled root >> /etc/apache2/apache2.conf
+					sudo chown -R root:root /etc/apache2
+					sudo chown -R root:root /etc/apache
+					echo \<Directory \> >> /etc/apache2/apache2.conf
+					echo -e ' \t AllowOverride None' >> /etc/apache2/apache2.conf
+					echo -e ' \t Order Deny,Allow' >> /etc/apache2/apache2.conf
+					echo -e ' \t Deny from all' >> /etc/apache2/apache2.conf
+					echo UserDir disabled root >> /etc/apache2/apache2.conf
 
 					##Installs and configures sql
 					sudo apt-get install mysql-server -y
@@ -934,6 +947,155 @@ networkSecurity(){
     pause
 }
 
+configSQL(){
+echo "Configuring mysql-server"
+    echo "This will script may reinstall mysql, reinstalling will delete the configuration files of the current set up, these files have been saved to your current directory"
+    cp -r /etc/mysql/ mysql/
+    sudo apt-get install mysql-server
+    sudo service mysql enable
+    sudo service mysql start
+    echo "
+/etc/mysql/mysql.conf.d/mysqld.cnf
+bind-address = 127.0.0.1
+user = mysql
+port = 1542
+local_infile = 0
+symbolic-links = 0
+default_password_lifetime = 90
+"
+    sudo gedit /etc/mysql/mysql.conf.d/mysqld.cnf
+    sudo ufw allow 1542
+    sudo service mysql restart
+    pause
+    #should we block foriegn computers from accessing mysql?
+}
+
+configApache2(){
+sudo apt-get install apache2 -y
+					sudo service apache2 start
+					sudo service apache2 enable
+					sudo ufw allow "Apache Full"
+					sudo apt-get install libapache2-mod-security2
+					sudo mv /etc/modsecurity/modsecurity.conf-recommended /etc/modsecurity/modsecurity.conf
+					sudo useradd -r -s /bin/false apache
+					sudo groupadd apache
+					sudo useradd -G apache apache
+					sudo chown -R apache:apache /opt/apache
+					sudo chmod -R 750 /etc/apache2/*
+					sudo chown -R root /etc/apache2
+					echo "ServerTokens Prod
+						ServerSignature Off
+						FileETag None
+						User apache
+						Group apache
+						TraceEnable off
+						Timeout 60
+						Header always append X-Frame-Options SAMEORIGIN
+						Header set X-XSS-Protection "1; mode=block"
+						<Directory />
+							Options –Indexes -Includes
+						AllowOverride None
+						</Directory>
+						<LimitExcept GET POST HEAD>
+						deny from all
+						</LimitExcept>
+						"
+						    sudo gedit /etc/apache2/apache2conf
+						    echo "You will have to configure https by yourself the following configuration...I have no idea how or if it works"
+						    echo "
+						<Directory /opt/apache/htdocs>
+						Options None
+						</Directory>
+						<Directory />
+						Options -Indexes
+						AllowOverride None
+						</Directory>
+						"
+						    # I need to get the correct location for this file
+						    sudo gedit /etc/apache2/httpsd.conf
+						    sudo service apache2 restart
+						    pause
+}
+configCron(){
+    ## Configuring cron
+    echo "Configuring cron"
+    sudo systemctl enable cron
+    sudo rm /etc/cron.deny
+    sudo rm /etc/at.deny
+    sudo touch /etc/cron.allow
+    sudo touch /etc/at.allow
+    sudo chmod og-rwx /etc/cron.allow
+    sudo chmod og-rwx /etc/at.allow
+    sudo chown root:root /etc/cron.allow
+    sudo chown root:root /etc/at.allow
+    sudo chown root:root /etc/crontab
+    sudo chmod og-rwx /etc/crontab
+    sudo chown root:root /etc/cron.hourly
+    sudo chmod og-rwx /etc/cron.hourly
+    sudo chown root:root /etc/cron.daily
+    sudo chmod og-rwx /etc/cron.daily
+    sudo chown root:root /etc/cron.weekly
+    sudo chmod og-rwx /etc/cron.weekly
+    sudo chown root:root /etc/cron.monthly
+    sudo chmod og-rwx /etc/cron.monthly
+    sudo chown root:root /etc/cron.d
+    sudo chmod og-rwx /etc/cron.d
+    pause
+}
+configSSH() {
+    echo "Configuring openssh-server"
+    echo "This script may reinstall openssh-server, reinstalling will delete the configuration files of the current set up, these files have been saved to your current directory"
+    cp -r /etc/ssh/ ssh/
+    sudo apt-get install openssh-server
+    sudo service sshd enable
+    sudo service sshd start
+    sudo chown root:root /etc/ssh/sshd_config
+    sudo chmod og-rwx /etc/ssh/sshd_config
+    echo "
+#KexAlgorithms curve25519-sha256@libssh.org,ecdh-sha2-nistp521,ecdh-sha2-nistp384,ecdh-sha2-nistp256,diffie-hellman-group-exchange-sha256
+#Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com,hmac-sha2-512,hmac-sha2-256,umac-128@openssh.com
+UsePrivilegeSeparation sandbox
+Subsystem sftp  internal-sftp -f AUTHPRIV -l INFO
+AllowTcpForwarding no
+AllowStreamLocalForwarding no
+GatewayPorts no
+PermitTunnel no
+UseDNS no
+Compression no
+TCPKeepAlive no
+AllowAgentForwarding no
+PermitRootLogin no
+Port 8808 **readme might give smth diff
+ForwardX11 no
+Protocol 2
+LogLevel INFO # Verbose
+X11Forwarding no
+MaxAuthTries 2
+IgnoreRhosts yes
+HostbasedAuthentication no
+PermitEmptyPasswords no
+PermitUserEnvironment no
+ClientAliveInterval 300
+ClientAliveCountMax 0
+LoginGraceTime 60
+Banner /etc/issue.net
+ListenAddress 0.0.0.0
+MaxSessions 2
+PasswordAuthentication yes/no ???????
+AllowUsers <userlist>
+AllowGroups <grouplist>
+DenyUsers <userlist>
+DenyGroups <grouplist>
+"
+    sudo gedit /etc/ssh/sshd_config
+    sudo service sshd restart
+    sudo sshd -T
+    #sudo ufw allow 8808
+    sudo systemctl reload sshd
+    pause
+}
+
 show_menu(){
 	case "$opsys" in
 	"Ubuntu")
@@ -951,7 +1113,9 @@ show_menu(){
 				echo "21) PostScript				22) Disable ctrl-alt-del"
 				echo "23) Disable Virtual Terminals		24)Exit"
 				echo "25) #Add user to group			26) Network Security"	
-				echo "27) Secure Shadow"	
+				echo "27) Secure Shadow				28) Configure SQL"
+				echo "29) Configure Apache2			30) Configure Cron"
+				echo "31) Configure SSH (again)"	
 	;;
 	"Debain")
 
@@ -1007,6 +1171,10 @@ read_options(){
 			25) addGroup;;
 			26) networkSecurity;;
 			27) secureShadow;;
+			28) configSQL;;
+			29) configApache2;;
+			30) configCron;;
+			31) configSSH;;
 			69)runFull;;
 			*) echo "Sorry that is not an option please select another one..."
 			;;
